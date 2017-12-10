@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <mpi.h>
+#include <numeric>
 #include <omp.h>
 #include <stdlib.h>
 
@@ -9,11 +10,12 @@ struct block_t {
     int column, row, plane;
     int width, height, depth;
     int left, right, bottom, top, back, front;
+    template <typename _Tp>
+    inline double mean_absolute_error(double *, _Tp, double, double, double, double, double, double, double);
 };
 
 inline int idx(int, int, int, int, int);
 inline int idx(int, int, int, int, int, int);
-inline double max_absolute_error(double *, const block_t &, double, double, double, double, double, double, double);
 inline double phi(double, double, double, double, double, double);
 inline double sol(double, double, double, double, double, double, double);
 
@@ -189,56 +191,57 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
-        MPI_Request request[12];
+        MPI_Request input_left_request, input_right_request, input_bottom_request, input_top_request, input_back_request, input_front_request;
+        MPI_Request output_left_request, output_right_request, output_bottom_request, output_top_request, output_back_request, output_front_request;
         if (0 <= block.left && block.left < size) {
-            MPI_Irecv(input_left, input_left_size, MPI_DOUBLE, block.left, 1, MPI_COMM_WORLD, &request[0]);
-            MPI_Isend(output_left, output_left_size, MPI_DOUBLE, block.left, 1, MPI_COMM_WORLD, &request[1]);
+            MPI_Irecv(input_left, input_left_size, MPI_DOUBLE, block.left, 1, MPI_COMM_WORLD, &input_left_request);
+            MPI_Isend(output_left, output_left_size, MPI_DOUBLE, block.left, 1, MPI_COMM_WORLD, &output_left_request);
         }
         if (0 <= block.right && block.right < size) {
-            MPI_Irecv(input_right, input_right_size, MPI_DOUBLE, block.right, 1, MPI_COMM_WORLD, &request[2]);
-            MPI_Isend(output_right, output_right_size, MPI_DOUBLE, block.right, 1, MPI_COMM_WORLD, &request[3]);
+            MPI_Irecv(input_right, input_right_size, MPI_DOUBLE, block.right, 1, MPI_COMM_WORLD, &input_right_request);
+            MPI_Isend(output_right, output_right_size, MPI_DOUBLE, block.right, 1, MPI_COMM_WORLD, &output_right_request);
         }
         if (0 <= block.bottom && block.bottom < size) {
-            MPI_Irecv(input_bottom, input_bottom_size, MPI_DOUBLE, block.bottom, 1, MPI_COMM_WORLD, &request[4]);
-            MPI_Isend(output_bottom, output_bottom_size, MPI_DOUBLE, block.bottom, 1, MPI_COMM_WORLD, &request[5]);
+            MPI_Irecv(input_bottom, input_bottom_size, MPI_DOUBLE, block.bottom, 1, MPI_COMM_WORLD, &input_bottom_request);
+            MPI_Isend(output_bottom, output_bottom_size, MPI_DOUBLE, block.bottom, 1, MPI_COMM_WORLD, &output_bottom_request);
         }
         if (0 <= block.top && block.top < size) {
-            MPI_Irecv(input_top, input_top_size, MPI_DOUBLE, block.top, 1, MPI_COMM_WORLD, &request[6]);
-            MPI_Isend(output_top, output_top_size, MPI_DOUBLE, block.top, 1, MPI_COMM_WORLD, &request[7]);
+            MPI_Irecv(input_top, input_top_size, MPI_DOUBLE, block.top, 1, MPI_COMM_WORLD, &input_top_request);
+            MPI_Isend(output_top, output_top_size, MPI_DOUBLE, block.top, 1, MPI_COMM_WORLD, &output_top_request);
         }
         if (0 <= block.back && block.back < size) {
-            MPI_Irecv(input_back, input_back_size, MPI_DOUBLE, block.back, 1, MPI_COMM_WORLD, &request[8]);
-            MPI_Isend(output_back, output_back_size, MPI_DOUBLE, block.back, 1, MPI_COMM_WORLD, &request[9]);
+            MPI_Irecv(input_back, input_back_size, MPI_DOUBLE, block.back, 1, MPI_COMM_WORLD, &input_back_request);
+            MPI_Isend(output_back, output_back_size, MPI_DOUBLE, block.back, 1, MPI_COMM_WORLD, &output_back_request);
         }
         if (0 <= block.front && block.front < size) {
-            MPI_Irecv(input_front, input_front_size, MPI_DOUBLE, block.front, 1, MPI_COMM_WORLD, &request[10]);
-            MPI_Isend(output_front, output_front_size, MPI_DOUBLE, block.front, 1, MPI_COMM_WORLD, &request[11]);
+            MPI_Irecv(input_front, input_front_size, MPI_DOUBLE, block.front, 1, MPI_COMM_WORLD, &input_front_request);
+            MPI_Isend(output_front, output_front_size, MPI_DOUBLE, block.front, 1, MPI_COMM_WORLD, &output_front_request);
         }
 //#pragma omp barrier
         MPI_Status status;
         if (0 <= block.left && block.left < size) {
-            MPI_Wait(&request[0], &status);
-            MPI_Wait(&request[1], &status);
+            MPI_Wait(&input_left_request, &status);
+            MPI_Wait(&output_left_request, &status);
         }
         if (0 <= block.right && block.right < size) {
-            MPI_Wait(&request[2], &status);
-            MPI_Wait(&request[3], &status);
+            MPI_Wait(&input_right_request, &status);
+            MPI_Wait(&output_right_request, &status);
         }
         if (0 <= block.bottom && block.bottom < size) {
-            MPI_Wait(&request[4], &status);
-            MPI_Wait(&request[5], &status);
+            MPI_Wait(&input_bottom_request, &status);
+            MPI_Wait(&output_bottom_request, &status);
         }
         if (0 <= block.top && block.top < size) {
-            MPI_Wait(&request[6], &status);
-            MPI_Wait(&request[7], &status);
+            MPI_Wait(&input_top_request, &status);
+            MPI_Wait(&output_top_request, &status);
         }
         if (0 <= block.back && block.back < size) {
-            MPI_Wait(&request[8], &status);
-            MPI_Wait(&request[9], &status);
+            MPI_Wait(&input_back_request, &status);
+            MPI_Wait(&output_back_request, &status);
         }
         if (0 <= block.front && block.front < size) {
-            MPI_Wait(&request[10], &status);
-            MPI_Wait(&request[11], &status);
+            MPI_Wait(&input_front_request, &status);
+            MPI_Wait(&output_front_request, &status);
         }
 //#pragma omp parallel for
         for (int k = 1; k <= block.depth; ++k) {
@@ -266,10 +269,11 @@ int main(int argc, char *argv[]) {
             prev[i] = self[i];
             self[i] = next[i];
         }
-        double score = max_absolute_error(self, block, hx, hy, hz, Lx, Ly, Lz, tau * n);
+        double score = block.mean_absolute_error(self, sol, hx, hy, hz, Lx, Ly, Lz, tau * n);
         MPI_Gather(&score, 1, MPI_DOUBLE, scores, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         if (!rank) {
-            std::cout << "-*- time: " << tau * n << ", score: " << *std::max_element(scores, scores + size) << " -*-" << std::endl;
+            score = std::accumulate(scores, scores + size, 0.) / size;
+            std::cout << "-*- time: " << tau * n << ", score: " << score << " -*-" << std::endl;
         }
 //#pragma omp barrier
         MPI_Barrier(MPI_COMM_WORLD);
@@ -292,10 +296,25 @@ int main(int argc, char *argv[]) {
     delete [] self;
     delete [] next;
     if (!rank) {
-        std::cout << "-*- Wtime: " << MPI_Wtime() - time << " -*-" << std::endl;
+        std::cout << "-*- Wtime: " << MPI_Wtime() - time << ", Np: " << size << ", N: " << N << " -*-" << std::endl;
     }
     MPI_Finalize();
-    return 0;
+    return EXIT_SUCCESS;
+}
+
+template <typename _Tp>
+double block_t::mean_absolute_error(double *self, _Tp func, double hx, double hy, double hz, double Lx, double Ly, double Lz, double t)
+{
+    double score = 0;
+    for (int k = 1; k <= depth; ++k) {
+        for (int j = 1; j <= height; ++j) {
+            for (int i = 1; i <= width; ++i) {
+                score += self[idx(i, j, k, width + 2, height + 2)] - func((column * width + i - 1) * hx, (row * height + j - 1) * hy, (plane * depth + k - 1) * hz, Lx, Ly, Lz, t);
+            }
+        }
+    }
+    score /= width * height * depth;
+    return score;
 }
 
 int idx(int i, int j, int k, int columns, int rows) {
@@ -307,22 +326,6 @@ int idx(int i, int j, int k, int columns, int rows, int planes) {
         return -1;
     }
     return idx(i, j, k, columns, rows);
-}
-
-double max_absolute_error(double *self, const block_t &block, double hx, double hy, double hz, double Lx, double Ly, double Lz, double t)
-{
-    double score = 0;
-    for (int k = 1; k <= block.depth; ++k) {
-        for (int j = 1; j <= block.height; ++j) {
-            for (int i = 1; i <= block.width; ++i) {
-                double err = self[idx(i, j, k, block.width + 2, block.height + 2)] - sol((block.column * block.width + i - 1) * hx, (block.row * block.height + j - 1) * hy, (block.plane * block.depth + k - 1) * hz, Lx, Ly, Lz, t);
-                if (score < fabs(err)) {
-                    score = fabs(err);
-                }
-            }
-        }
-    }
-    return score;
 }
 
 double phi(double x, double y, double z, double Lx, double Ly, double Lz) {
